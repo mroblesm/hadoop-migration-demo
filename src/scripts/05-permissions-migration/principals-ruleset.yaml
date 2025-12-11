@@ -1,0 +1,37 @@
+ranger:
+  user_rules:
+    - when: "user.name == 'analyst_us'"
+      map:
+        type:
+          value: user
+        email_address:
+          expression: "analyst_us@your-org.com"
+    - when: "user.name == 'analyst_eu'"
+      map:
+        type:
+          value: user
+        email_address:
+          expression: "analyst_eu@your-org.com"
+  group_rules:
+    - when: "group.name == 'analyst_us'"
+      map:
+        type:
+          value: group
+        email_address:
+          expression: "data_analysts_us@your-org.com"
+    - when: "group.name == 'analyst_eu'"
+      map:
+        type:
+          value: group
+        email_address:
+          expression: "data_analysts_eu@your-org.com"
+  role_rules:
+    - skip: true
+
+hdfs:
+  user_rules:
+    - skip: true
+  group_rules:
+    - skip: true
+  other_rules:
+    - skip: true

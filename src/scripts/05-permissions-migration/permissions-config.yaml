@@ -1,0 +1,4 @@
+gcs:
+  ranger_hive_rules:
+    - map: {}
+      log: true
