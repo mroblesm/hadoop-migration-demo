@@ -1,4 +1,4 @@
-# 3. Run Spark job using Google Cloud Serverless for Spark Batch
+# 3. Run Spark job using Google Cloud Serverless for Spark Batch
 
 The following section shows how to migrate a Spark job to Google Cloud Serverless for Apache Spark. This job performs a basic data join and aggregation. Two changes are introduced as part of the migration:
 * The original PySpark script expected as input argument the path to the original data location in HDFS for the customers and transactions tables. The new path to GCS where data has been migrated is provided instead. The serverless spark runtime in GCP already ships the required GCS connector libraries.
