@@ -1,8 +1,10 @@
 # 1. Migrate data from HDFS to GCS using STS
 
-This step uses [Storage Transfer Service](https://docs.cloud.google.com/storage-transfer/docs/create-transfers/agent-based/hdfs) to set up a regular data transfer job from HDFS in legacy Hadoop cluster to a bucket in Google Cloud Storage. The main steps involved are:
+This step uses [Storage Transfer Service](https://docs.cloud.google.com/storage-transfer/docs/create-transfers/agent-based/hdfs) to set up a regular data transfer job from HDFS in legacy Hadoop cluster to a bucket in Google Cloud Storage.
 
-## 1. STS Agent & Agent Pool
+The main steps involved are:
+
+**1. STS Agent & Agent Pool**
 
 First, let's create a STS Agent Pool that will contain the transfer agent.
 
@@ -35,7 +37,7 @@ sudo docker run -d --ulimit memlock=64000000 --rm \
 ```
 Navigate to the STS page in Cloud console, to verify the Agent is up & running (green state) in the Agent pool, ready to use.
 
-## 2. STS Transfer job
+**2. STS Transfer job**
 
 Lastly, a STS transfer job is created to periodically copy data from source to destination. These steps can be executed directly from Cloud Shell.
 
@@ -50,7 +52,7 @@ gcloud transfer jobs create hdfs:///data ${DATA_BUCKET} \
     --overwrite-when=different
 ```
 
-## Alternative approach
+# Alternative approach
 
 If you encounter any issue setting up STS, alternatively in order to continue with the demo you can use Hadoop Distcp (Dataproc images are already configured with GCS connector):
 ```
