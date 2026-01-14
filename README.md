@@ -109,12 +109,17 @@ You should see only data for EU:
 
 ## Step by step demo
 
-![1. Migrate data from HDFS to GCS using STS](assets/01_migrate_data.md)
-![2. Enable SQL consumption from BigQuery using BigLake](assets/02_bq_biglake.md)
-![3. Run Spark job using Google Cloud Serverless for Spark Batch](assets/03_spark.md)
-![4. Interactive session in Colab Enterprise Notebook](assets/04_notebook.md)
-![5. Permissions and Policies migration](assets/05_permissions.md)
-![6. Migrating to Iceberg tables and BigLake Metastore](assets/06_iceberg.md)
+[1. Migrate data from HDFS to GCS using STS](assets/01_migrate_data.md)
+
+[2. Enable SQL consumption from BigQuery using BigLake](assets/02_bq_biglake.md)
+
+[3. Run Spark job using Google Cloud Serverless for Spark Batch](assets/03_spark.md)
+
+[4. Interactive session in Colab Enterprise Notebook](assets/04_notebook.md)
+
+[5. Permissions and Policies migration](assets/05_permissions.md)
+
+[6. Migrating to Iceberg tables and BigLake Metastore](assets/06_iceberg.md)
 
 Finally, to clean up the resources created:
 ```console
