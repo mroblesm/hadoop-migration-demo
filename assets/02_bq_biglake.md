@@ -1,4 +1,4 @@
-# 2. Enable SQL consumption from BigQuery using BigLake External tables
+# 2. Enable SQL consumption from BigQuery using BigLake External tables
 
 Once data is migrated, new BigLake external tables are defined to enable consumption from BigQuery, and HQL code is translated to BigQuery SQL.
 
