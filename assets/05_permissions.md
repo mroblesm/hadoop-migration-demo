@@ -1,10 +1,10 @@
-# 5. Permissions and Policies migration
+# 5. Permissions and Policies migration
 
 This last step shows how Ranger permissions can be migrated to Google Cloud's Cloud IAM in BigQuery ([docs](https://docs.cloud.google.com/bigquery/docs/access-control-basic-roles)) and BigQuery's column-level and row-level access policies ([1](https://docs.cloud.google.com/bigquery/docs/column-level-security-intro), [2](https://docs.cloud.google.com/bigquery/docs/row-level-security-intro))
 
 You will need to first setup the Google users and groups in Cloud IAM that will replicate the user principals and groups in the legacy Hadoop platform (`analyst_us` and `analyst_eu`). If you don't have access to your organisation, you can use existing Google users and groups as target users (you will need the mapping in next steps).
 
-## Using BQMS to migrate Ranger policies
+## Using BQMS to migrate Ranger policies
 
 Once target users and groups are created, [BQMS Hadoop permissions migration tool](https://docs.cloud.google.com/bigquery/docs/hadoop-permissions-migration) can be used to first extract the metadata from the source Hadoop cluster, then create the necessary resources in Google Cloud based on defined "configuration files".
 
@@ -23,7 +23,7 @@ The required steps to execute the migration are as follow. Details found in next
 6. Apply permissions to BQ / GCS Folders
 
 
-### 1. Extract metadata
+**1. Extract metadata**
 
 First step is to extract existing metadata using `dwh-dumper-tool` (part of BQMS). This tool needs to be installed and executed in a node in source Hadoop platform with access to Ranger.
 
@@ -52,7 +52,7 @@ cd dwh-migration-tools-v1.7.0/dumper/bin
 ```
 Check the execution output to verify it has executed successfully. It will generate a file GCS `ranger-dumper-output.zip`. This file contains Ranger policies to migrate.
 
-### 2. Create Principals mapping ruleset configuration file
+**2. Create Principals mapping ruleset configuration file**
 
 Next step is to create a principals mapping file.
 First, a ruleset configuration file is required, containing mapping rules that will instruct BQMS how to map each of your sources Hadoop principals (users, groups, functional accounts) to Cloud IAM user, groups and service accounts.
@@ -61,8 +61,7 @@ We will use an example file, replacing required values with the Google identitie
 gsutil cp src/scripts/05-permissions-migration/principals-ruleset.yaml gs://${CODE_BUCKET}
 ```
 
-
-### 3. Generate Principals mapping file ‘principals.yaml’
+**3. Generate Principals mapping file ‘principals.yaml’**
 
 With the ruleset configuration file, invoke dwh tool to generate principals mapping file.
 ```console
@@ -73,7 +72,7 @@ With the ruleset configuration file, invoke dwh tool to generate principals mapp
 ```
 Check the execution output to verify it has executed successfully. It will generate a file GCS `principals.yaml`. This file contains the exact mapping of principals.
 
-### 4. Create permissions configuration file
+**4. Create permissions configuration file**
 
 Next step is to create the target permissions file.
 First, a permissions configuration file is required. This file defines customisation of how permissions from Ranger map to BigQuery (i.e. to use a custom IAM role for certain tables).
@@ -82,7 +81,7 @@ We will use an example file that does not contain any customisation.
 gsutil cp src/scripts/05-permissions-migration/permissions-config.yaml gs://${CODE_BUCKET}
 ```
 
-### 5. Generate Permissions mapping file ‘permissions.yaml’
+**5. Generate Permissions mapping file ‘permissions.yaml’**
 
 With the permissions configuration file, invoke dwh tool to generate the target permissions file.
 ```console
@@ -95,7 +94,7 @@ With the permissions configuration file, invoke dwh tool to generate the target 
 ```
 Check the execution output to verify it has executed successfully. It will generate a file GCS `permissions.yaml`. This file contains permissions from your source mapped to BigQuery IAM bindings.
 
-### 6. Apply permissions to BQ / GCS Folders
+**6. Apply permissions to BQ / GCS Folders**
 
 Once you have generated a target permissions file, you can then run the dwh tool to apply the IAM permissions to BigQuery.
 ```console
