@@ -39,7 +39,7 @@ fi
     --auto-approve
 if [ ! "${?}" -eq 0 ]; then
     LOG_DATE=`date`
-    echo "${LOG_DATE} Unable to run ${TERRAFORM_BIN} apply. Exiting..."
+    echo "${LOG_DATE} Unable to run ${TERRAFORM_BIN} destroy. Exiting..."
 fi
 
 LOG_DATE=`date`

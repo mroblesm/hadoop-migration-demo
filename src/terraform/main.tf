@@ -12,7 +12,7 @@ locals {
   vpc_name                        = "vpc-main"
   vpc_subnet_name                 = "spark-subnet"
   subnet_cidr_range               = "10.0.0.0/24"
-  tf_sa_id                        = "${local.project_id}@${local.project_id}.iam.gserviceaccount.com"
+
   dataproc_legacy_bucket          = "${local.project_id}-dataproc-legacy"
   dataproc_legacy_dw_bucket       = "${local.project_id}-dataproc-legacy-dw"
   ranger_pwd_bucket               = "${local.project_id}-ranger-pwd"
@@ -303,7 +303,7 @@ resource "google_compute_firewall" "allow_internal" {
   source_ranges = [local.subnet_cidr_range]
 
   depends_on = [
-    google_compute_subnetwork.gce-subnet
+    google_compute_subnetwork.spark_subnet
   ]
 }
 
@@ -413,7 +413,8 @@ resource "google_service_account" "dataproc_service_account" {
 }
 
 resource "google_project_iam_member" "dataproc_service_account_roles" {
-  // TODO remove owner and refine required roles below
+  // NOTE: Owner role is kept for demo simplicity and robustness.
+  // In a production environment, use granular roles instead.
   for_each = toset([
     "roles/owner",
     "roles/bigquery.admin",
@@ -597,7 +598,7 @@ resource "google_project_iam_member" "biglake_customconnectiondelegate" {
 }
 
 # Allow Dataplex SA to use BigLake connection for Discovery Job (BQ Conn Admin)
-resource "google_project_iam_member" "bq_connection_discovery_publishing_agent" {
+resource "google_project_iam_member" "dataplex_biglake_publisher" {
   project  = local.project_id
   role     = "roles/dataplex.discoveryBigLakePublishingServiceAgent"
   member   = "serviceAccount:service-${local.project_number}@gcp-sa-dataplex.iam.gserviceaccount.com"
@@ -607,7 +608,7 @@ resource "google_project_iam_member" "bq_connection_discovery_publishing_agent" 
   ]
 }
 
-resource "google_project_iam_member" "bq_connection_discovery_publishing_agent" {
+resource "google_project_iam_member" "bq_connection_discovery_agent" {
   project  = local.project_id
   role     = "roles/dataplex.discoveryServiceAgent"
   member   = "serviceAccount:${google_bigquery_connection.biglake_connection.cloud_resource[0].service_account_id}"
@@ -619,7 +620,7 @@ resource "google_project_iam_member" "bq_connection_discovery_publishing_agent" 
 # TODO roles/dataplex.discoveryServiceAgent on bucket
 # TODO roles/dataplex.discoveryBigLakePublishingServiceAgent on the bigquery connection
 
-resource "google_project_iam_member" "biglake_customconnectiondelegate" {
+resource "google_project_iam_member" "biglake_connection_service_agent" {
   project  = local.project_id
   role     = "roles/dataplex.discoveryServiceAgent"
   member   = "serviceAccount:${google_bigquery_connection.biglake_connection.cloud_resource[0].service_account_id}"
@@ -670,30 +671,5 @@ output "biglake_connection" {
 
 
 
-/******************************************
- Custom Roles
- *****************************************/
 
-resource "google_project_iam_custom_role" "customconnectiondelegate" {
-  role_id     = "CustomConnectionDelegate"
-  title       = "Custom Connection Delegate"
-  description = "Used for BQ connections"
-  permissions = ["biglake.tables.create","biglake.tables.delete","biglake.tables.get",
-  "biglake.tables.list","biglake.tables.lock","biglake.tables.update",
-  "bigquery.connections.delegate"]
-  depends_on = [
-    time_sleep.sleep_after_org_policy_updates
-  ]
-}
-
-resource "google_project_iam_custom_role" "custom-role-custom-delegate" {
-  role_id     = "CustomDelegate"
-  title       = "Custom Delegate"
-  description = "Used for BLMS connections"
-  permissions = ["bigquery.connections.delegate"]
-  depends_on = [
-    google_project_iam_custom_role.customconnectiondelegate,
-    time_sleep.sleep_after_org_policy_updates
-  ]
-}
 

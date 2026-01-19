@@ -19,7 +19,7 @@ LOG_DATE=`date`
 echo "###########################################################################################"
 echo "${LOG_DATE} Launching Terraform ..."
 
-"${TERRAFORM_BIN}" init
+"${TERRAFORM_BIN}" init -reconfigure
 if [ ! "${?}" -eq 0 ]; then
     LOG_DATE=`date`
     echo "${LOG_DATE} Unable to run ${TERRAFORM_BIN} init -reconfigure. Exiting..."
