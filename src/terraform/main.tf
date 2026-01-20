@@ -21,6 +21,8 @@ locals {
   data_bucket                     = "${local.project_id}-data"
   keyring                         = "demo-keyring"
   key                             = "demo-key"
+  kms_key_uri                     = "projects/${local.project_id}/locations/${local.region}/keyRings/${local.keyring}/cryptoKeys/${local.key}"
+  ranger_password_uri             = "gs://${local.ranger_pwd_bucket}/${local.ranger_pwd_enc}"
 }
 
 /******************************************
@@ -107,10 +109,15 @@ resource "google_project_service" "service-servicenetworking" {
 resource "google_project_service" "service-storagetransfer" {
   project = var.project_id
   service = "storagetransfer.googleapis.com"
-} 
+}
+
+resource "google_project_service" "service-cloudkms" {
+  project = var.project_id
+  service = "cloudkms.googleapis.com"
+}
 
 resource "time_sleep" "google_api_activation_time_delay" {
-  create_duration = "120s"
+  create_duration = "30s"
   depends_on = [
     google_project_service.service-serviceusage,
     google_project_service.service-cloudresourcemanager,
@@ -123,6 +130,7 @@ resource "time_sleep" "google_api_activation_time_delay" {
     google_project_service.service-biglake,
     google_project_service.service-servicenetworking,
     google_project_service.service-storagetransfer,
+    google_project_service.service-cloudkms,
     google_project_service.enable_compute_google_apis,
     google_project_service.enable_container_google_apis,
     google_project_service.enable_dataplex_api
@@ -217,7 +225,7 @@ resource "google_project_organization_policy" "orgPolicyUpdate_disableServiceAcc
 }
 
 resource "time_sleep" "sleep_after_org_policy_updates" {
-  create_duration = "3m"
+  create_duration = "5s"
   depends_on = [
     google_project_organization_policy.orgPolicyUpdate_disableSerialPortLogging,
     google_project_organization_policy.orgPolicyUpdate_requireOsLogin,
@@ -382,11 +390,11 @@ resource "google_storage_bucket" "data_bucket" {
 }
 
 output "code_bucket" {
-  value = google_storage_bucket_object.code_bucket.id
+  value = google_storage_bucket.code_bucket.id
 }
 
 output "data_bucket" {
-  value = google_storage_bucket_object.data_bucket.id
+  value = google_storage_bucket.data_bucket.id
 }
 
 /******************************************
@@ -395,7 +403,7 @@ output "data_bucket" {
 
 resource "google_storage_bucket_object" "default" {
  name         = "01"
- source       = "src/scripts/legacy-hadoop/01-generate-data.py"
+ source       = "${path.module}/../scripts/00-legacy-hadoop/01-generate-data.py"
  content_type = "text/plain"
  bucket       = google_storage_bucket.code_bucket.id
 }
@@ -439,6 +447,9 @@ resource "google_project_iam_member" "dataproc_service_account_roles" {
 resource "google_kms_key_ring" "keyring" {
   name     = "app-secure-keyring"
   location = local.region
+  depends_on = [
+    google_project_service.service-cloudkms
+  ]
 }
 
 resource "google_kms_crypto_key" "cryptokey" {
@@ -484,18 +495,7 @@ resource "google_dataproc_cluster" "legacy_cluster" {
 
     master_config {
       num_instances = 1
-      machine_type  = "e2-medium"
-      disk_config {
-        boot_disk_type    = "pd-ssd"
-        boot_disk_size_gb = 30
-        num_local_ssds    = 1
-        local_ssd_interface = "nvme"
-      }
-    }
-
-    worker_config {
-      num_instances = 1
-      machine_type  = "e2-medium"
+      machine_type  = "n1-standard-2"
       disk_config {
         boot_disk_type    = "pd-ssd"
         boot_disk_size_gb = 30
@@ -506,6 +506,7 @@ resource "google_dataproc_cluster" "legacy_cluster" {
 
     gce_cluster_config {
       subnetwork = google_compute_subnetwork.spark_subnet.id
+      service_account = google_service_account.dataproc_service_account.email
       # Scopes to allow access to GCS and BigQuery (if needed later)
       service_account_scopes = [
         "https://www.googleapis.com/auth/cloud-platform"
@@ -532,16 +533,16 @@ resource "google_dataproc_cluster" "legacy_cluster" {
       ]
 
       # Setup properties
-      properties = {
+      override_properties = {
+        "dataproc:dataproc.allow.zero.workers"            = "true"
         "dataproc:dataproc.allow.zero.workers"            = "false"
         "dataproc:solr.gcs.path"                          = "gs://${local.dataproc_legacy_bucket}/solr"
-        "dataproc:ranger.kms.key.uri"                     = "projects/${local.project_id}/locations/${local.region}/keyRings/${local.keyring}/cryptoKeys/${local.key}"
-        "dataproc:ranger.admin.password.uri"              = "gs://${local.ranger_pwd_bucket}/${local.ranger_pwd_enc}"
-        "dataproc:ranger.gcs.plugin.mysql.kms.key.uri"    = "projects/${local.project_id}/locations/${local.region}/keyRings/${local.keyring}/cryptoKeys/${local.key}"
-        "dataproc:ranger.gcs.plugin.mysql.password.uri"   = "gs://${local.ranger_pwd_bucket}/${local.ranger_pwd_enc}"
+        "dataproc:ranger.kms.key.uri"                     = local.kms_key_uri
+        "dataproc:ranger.admin.password.uri"              = local.ranger_password_uri
+        "dataproc:ranger.gcs.plugin.mysql.kms.key.uri"    = local.kms_key_uri
+        "dataproc:ranger.gcs.plugin.mysql.password.uri"   = local.ranger_password_uri
         "spark:spark.dataproc.enhanced.optimizer.enabled" = "true"
         "spark:spark.dataproc.enhanced.execution.enabled" = "true"
-        "dataproc:dataproc.cluster.caching.enabled"       = "true"
       }
 
     }
@@ -552,6 +553,10 @@ resource "google_dataproc_cluster" "legacy_cluster" {
     }
 
   }
+  depends_on = [
+    google_storage_bucket_object.ciphertext_upload,
+    google_kms_crypto_key.cryptokey
+  ]
 }
 
 output "legacy_hadoop_cluster" {
@@ -597,17 +602,6 @@ resource "google_project_iam_member" "biglake_customconnectiondelegate" {
   ]
 }
 
-# Allow Dataplex SA to use BigLake connection for Discovery Job (BQ Conn Admin)
-resource "google_project_iam_member" "dataplex_biglake_publisher" {
-  project  = local.project_id
-  role     = "roles/dataplex.discoveryBigLakePublishingServiceAgent"
-  member   = "serviceAccount:service-${local.project_number}@gcp-sa-dataplex.iam.gserviceaccount.com"
-
-  depends_on = [
-    google_bigquery_connection.biglake_connection
-  ]
-}
-
 resource "google_project_iam_member" "bq_connection_discovery_agent" {
   project  = local.project_id
   role     = "roles/dataplex.discoveryServiceAgent"
@@ -617,17 +611,33 @@ resource "google_project_iam_member" "bq_connection_discovery_agent" {
     google_bigquery_connection.biglake_connection
   ]
 }
-# TODO roles/dataplex.discoveryServiceAgent on bucket
-# TODO roles/dataplex.discoveryBigLakePublishingServiceAgent on the bigquery connection
 
-resource "google_project_iam_member" "biglake_connection_service_agent" {
-  project  = local.project_id
-  role     = "roles/dataplex.discoveryServiceAgent"
-  member   = "serviceAccount:${google_bigquery_connection.biglake_connection.cloud_resource[0].service_account_id}"
+# Grant Dataplex SA permission to publish discovery results via the BigLake connection
+resource "google_bigquery_connection_iam_member" "dataplex_discovery_publisher_on_connection" {
+  project       = local.project_id
+  location      = local.bigquery_region
+  connection_id = google_bigquery_connection.biglake_connection.connection_id
+  role          = "roles/dataplex.discoveryBigLakePublishingServiceAgent"
+  member        = "serviceAccount:service-${local.project_number}@gcp-sa-dataplex.iam.gserviceaccount.com"
 
   depends_on = [
-    google_bigquery_connection.biglake_connection,
-    google_project_iam_custom_role.customconnectiondelegate
+    google_dataplex_lake.biglake_lake,
+    google_bigquery_connection.biglake_connection
+  ]
+}
+
+# Grant Dataplex SA permission to discover data in the GCS buckets
+resource "google_storage_bucket_iam_member" "dataplex_discovery_on_buckets" {
+  for_each = toset([
+    google_storage_bucket.data_bucket.name,
+    google_storage_bucket.dataproc_legacy_dw_bucket.name
+  ])
+  bucket = each.key
+  role   = "roles/dataplex.discoveryServiceAgent"
+  member = "serviceAccount:service-${local.project_number}@gcp-sa-dataplex.iam.gserviceaccount.com"
+
+  depends_on = [
+    google_dataplex_lake.biglake_lake
   ]
 }
 
@@ -635,41 +645,31 @@ output "biglake_connection" {
   value = google_bigquery_connection.biglake_connection.connection_id
 }
 
+/******************************************
+ Dataplex
+ *****************************************/
 
+resource "google_dataplex_lake" "biglake_lake" {
+  name     = "biglake-lake"
+  location = local.region
+  project  = local.project_id
 
+  metastore {
+    service = ""
+  }
+  depends_on = [
+    time_sleep.google_api_activation_time_delay
+  ]
+}
 
+# Allow Dataplex SA to use BigLake connection for Discovery Job (BQ Conn Admin)
+resource "google_project_iam_member" "dataplex_biglake_publisher" {
+  project  = local.project_id
+  role     = "roles/bigquery.connectionAdmin"
+  member   = "serviceAccount:service-${local.project_number}@gcp-sa-dataplex.iam.gserviceaccount.com"
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  depends_on = [
+    google_dataplex_lake.biglake_lake,
+    google_bigquery_connection.biglake_connection
+  ]
+}
