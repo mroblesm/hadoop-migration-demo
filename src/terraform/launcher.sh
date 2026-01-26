@@ -19,8 +19,8 @@ LOG_DATE=`date`
 echo "###########################################################################################"
 echo "${LOG_DATE} Launching Terraform ..."
 
-echo "${LOG_DATE} Refreshing Application Default Credentials..."
-gcloud auth application-default login --quiet
+# echo "${LOG_DATE} Refreshing Application Default Credentials..."
+# gcloud auth application-default login --quiet
 
 
 "${TERRAFORM_BIN}" init -reconfigure

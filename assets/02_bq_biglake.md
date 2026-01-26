@@ -9,7 +9,8 @@ BigLake external tables point to data in GCS and use a BigLake connection for ac
 First, a BigQuery dataset is created.
 ```console
 DATASET="datalake_demo"
-bq --location=${REGION} mk \
+BQ_REGION=$(terraform output -raw bigquery_region)
+bq --location=${BQ_REGION} mk \
     --dataset \
     ${GOOGLE_CLOUD_PROJECT}:${DATASET}
 ```
@@ -22,23 +23,24 @@ More details in [public docs](https://docs.cloud.google.com/bigquery/docs/create
 
 First, table definition files for each table are created.
 ```console
-BL_CONN=$(terraform output biglake_connection)
+BL_CONN=$(terraform output -raw biglake_connection)
+DATA_BUCKET=$(terraform output -raw data_bucket)
 bq mkdef --autodetect=true \
 --connection_id=${BL_CONN} \
 --source_format=PARQUET \
-gs://${DATA_BUCKET}/data/customers/*.parquet > customers_tabledef.json
+gs://${DATA_BUCKET}/data/customers/*.parquet > /tmp/customers_tabledef.json
 bq mkdef --autodetect=true \
 --connection_id=${BL_CONN} \
 --source_format=PARQUET \
-gs://${DATA_BUCKET}/data/transactions/*.parquet > transactions_tabledef.json
+gs://${DATA_BUCKET}/data/transactions/*.parquet > /tmp/transactions_tabledef.json
 ```
 Secondly, tables are created using the table definion files.
 ```
 bq mk --table \
-  --external_table_definition=customers_tabledef.json \
+  --external_table_definition=/tmp/customers_tabledef.json \
   ${GOOGLE_CLOUD_PROJECT}:${DATASET}.customers
 bq mk --table \
-  --external_table_definition=transactions_tabledef.json \
+  --external_table_definition=/tmp/transactions_tabledef.json \
   ${GOOGLE_CLOUD_PROJECT}:${DATASET}.transactions
 ```
 
@@ -53,13 +55,13 @@ gcloud dataplex datascans create data-discovery $SCAN_ID \
     --project=$GOOGLE_CLOUD_PROJECT \
     --location=$REGION \
     --data-source-resource="//storage.googleapis.com/projects/${GOOGLE_CLOUD_PROJECT}/buckets/${DATA_BUCKET}" \
-    --bigquery-publishing-connection="projects/$GOOGLE_CLOUD_PROJECT/locations/$REGION/connections/${BL_CONN}" \
-    --bigquery-publishing-dataset-location="${REGION}" \
+    --bigquery-publishing-connection="${BL_CONN}" \
+    --bigquery-publishing-dataset-location="${BQ_REGION}" \
     --bigquery-publishing-dataset-project="projects/${GOOGLE_CLOUD_PROJECT}" \
     --bigquery-publishing-table-type="BIGLAKE" \
     --storage-include-patterns="**/*.parquet" \
     --on-demand="ON_DEMAND"
-gcloud dataplex datascans run $SCAN_ID$ \
+gcloud dataplex datascans run $SCAN_ID \
   --location=$REGION
 ```
 

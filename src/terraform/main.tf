@@ -1,27 +1,37 @@
+terraform {
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      # Using a recent version to ensure content_base64 is available
+      version = ">= 4.0.0"
+    }
+  }
+}
+
 
 /******************************************
  Local variables declaration
  *****************************************/
 
 locals {
-  project_id                      = "${var.project_id}"
-  project_number                  = "${var.project_number}"
-  region                          = "${var.region}"
-  zone                            = "${var.zone}"
+  project_id                      = var.project_id
+  project_number                  = var.project_number
+  region                          = var.region
+  zone                            = var.zone
   bigquery_region                 = "us"
   vpc_name                        = "vpc-main"
   vpc_subnet_name                 = "spark-subnet"
   subnet_cidr_range               = "10.0.0.0/24"
 
-  dataproc_legacy_bucket          = "${local.project_id}-dataproc-legacy"
-  dataproc_legacy_dw_bucket       = "${local.project_id}-dataproc-legacy-dw"
-  ranger_pwd_bucket               = "${local.project_id}-ranger-pwd"
+  dataproc_legacy_bucket          = "${var.project_id}-dataproc-legacy"
+  dataproc_legacy_dw_bucket       = "${var.project_id}-dataproc-legacy-dw"
+  ranger_pwd_bucket               = "${var.project_id}-ranger-pwd"
   ranger_pwd_enc                  = "ranger-password.enc"
-  code_bucket                     = "${local.project_id}-code"
-  data_bucket                     = "${local.project_id}-data"
-  keyring                         = "demo-keyring"
-  key                             = "demo-key"
-  kms_key_uri                     = "projects/${local.project_id}/locations/${local.region}/keyRings/${local.keyring}/cryptoKeys/${local.key}"
+  code_bucket                     = "${var.project_id}-code"
+  data_bucket                     = "${var.project_id}-data"
+  keyring                         = "app-secure-keyring"
+  key                             = "app-password-key"
+  kms_key_uri                     = "projects/${var.project_id}/locations/${var.region}/keyRings/${local.keyring}/cryptoKeys/${local.key}"
   ranger_password_uri             = "gs://${local.ranger_pwd_bucket}/${local.ranger_pwd_enc}"
 }
 
@@ -402,7 +412,7 @@ output "data_bucket" {
  *****************************************/
 
 resource "google_storage_bucket_object" "default" {
- name         = "01"
+ name         = "01-generate-data.py"
  source       = "${path.module}/../scripts/00-legacy-hadoop/01-generate-data.py"
  content_type = "text/plain"
  bucket       = google_storage_bucket.code_bucket.id
@@ -445,7 +455,7 @@ resource "google_project_iam_member" "dataproc_service_account_roles" {
  *****************************************/
 
 resource "google_kms_key_ring" "keyring" {
-  name     = "app-secure-keyring"
+  name     = local.keyring
   location = local.region
   depends_on = [
     google_project_service.service-cloudkms
@@ -453,7 +463,7 @@ resource "google_kms_key_ring" "keyring" {
 }
 
 resource "google_kms_crypto_key" "cryptokey" {
-  name            = "app-password-key"
+  name            = local.key
   key_ring        = google_kms_key_ring.keyring.id
   rotation_period = "7776000s" # Rotate key every 90 days
 
@@ -472,14 +482,23 @@ output "ranger_pwd_clear" {
   value = var.ranger_pwd
 }
 
+resource "local_file" "ranger_pwd_file" {
+  filename = "/tmp/_ranger_pwd_file.enc"
+  content_base64  = google_kms_secret_ciphertext.encrypted_password.ciphertext
+  depends_on = [ google_kms_secret_ciphertext.encrypted_password ]
+}
+
 resource "google_storage_bucket_object" "ciphertext_upload" {
   name    = local.ranger_pwd_enc
   bucket  = local.ranger_pwd_bucket
   
-  # The ciphertext attribute is Base64 encoded encrypted data
-  content = google_kms_secret_ciphertext.encrypted_password.ciphertext
+  source = local_file.ranger_pwd_file.filename
+  source_md5hash = local_file.ranger_pwd_file.content_md5
+
+  # Optional: Explicitly set the content type for binary data
+  content_type = "application/octet-stream"
   
-  content_type = "text/plain"
+  depends_on = [ local_file.ranger_pwd_file ]
 }
 
 /******************************************
@@ -495,16 +514,21 @@ resource "google_dataproc_cluster" "legacy_cluster" {
 
     master_config {
       num_instances = 1
-      machine_type  = "n1-standard-2"
+      machine_type  = "n4-standard-8"
       disk_config {
-        boot_disk_type    = "pd-ssd"
-        boot_disk_size_gb = 30
-        num_local_ssds    = 1
-        local_ssd_interface = "nvme"
+        boot_disk_type    = "hyperdisk-balanced"
+        boot_disk_size_gb = 100
+        # num_local_ssds    = 1
+        # local_ssd_interface = "nvme"
       }
     }
 
+    worker_config {
+        num_instances = 0
+    }
+
     gce_cluster_config {
+      zone = var.zone
       subnetwork = google_compute_subnetwork.spark_subnet.id
       service_account = google_service_account.dataproc_service_account.email
       # Scopes to allow access to GCS and BigQuery (if needed later)
@@ -535,14 +559,16 @@ resource "google_dataproc_cluster" "legacy_cluster" {
       # Setup properties
       override_properties = {
         "dataproc:dataproc.allow.zero.workers"            = "true"
-        "dataproc:dataproc.allow.zero.workers"            = "false"
         "dataproc:solr.gcs.path"                          = "gs://${local.dataproc_legacy_bucket}/solr"
         "dataproc:ranger.kms.key.uri"                     = local.kms_key_uri
         "dataproc:ranger.admin.password.uri"              = local.ranger_password_uri
+        "dataproc:ranger.db.admin.password.uri"           = local.ranger_password_uri
         "dataproc:ranger.gcs.plugin.mysql.kms.key.uri"    = local.kms_key_uri
         "dataproc:ranger.gcs.plugin.mysql.password.uri"   = local.ranger_password_uri
         "spark:spark.dataproc.enhanced.optimizer.enabled" = "true"
         "spark:spark.dataproc.enhanced.execution.enabled" = "true"
+        "spark:spark.sql.catalogImplementation"           = "hive"
+        "hive:hive.metastore.warehouse.dir"               = "/user/hive/warehouse"
       }
 
     }
@@ -642,7 +668,11 @@ resource "google_storage_bucket_iam_member" "dataplex_discovery_on_buckets" {
 }
 
 output "biglake_connection" {
-  value = google_bigquery_connection.biglake_connection.connection_id
+  value = google_bigquery_connection.biglake_connection.id
+}
+
+output "bigquery_region" {
+  value = local.bigquery_region
 }
 
 /******************************************

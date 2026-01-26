@@ -49,26 +49,27 @@ A successful execution will have created a 'legacy-hadoop-cluster' in Dataproc. 
 
 * Run this to upload required scripts to master node
 ```console
-cd src/scripts/legacy-hadoop
+cd src/scripts/00-legacy-hadoop
 source upload_to_host.sh ${GOOGLE_CLOUD_PROJECT} ${ZONE}
 ```
 
 * The following spark job creates 2 Hive external tables with dummy data in HDFS (under /data path): customers, transactions.
 ```console
-cd src/terraform
-CODE_BUCKET=$(terraform output code_bucket)
-LEGACY_CLUSTER_NAME=$(terraform output legacy_hadoop_cluster)
+cd ../../terraform
+CODE_BUCKET=$(terraform output -raw code_bucket)
+LEGACY_CLUSTER_NAME=$(terraform output -raw legacy_hadoop_cluster)
 gcloud dataproc jobs submit pyspark \
     gs://${CODE_BUCKET}/01-generate-data.py \
     --cluster=${LEGACY_CLUSTER_NAME}  \
     --region=${REGION}
 ```
-* Once the job finishes (it should take about 30-60 seconds), you can verify the data exists in HDFS by SSHing into the master node:
+* Once the job finishes (it should take about 30-60 seconds), you can verify the data exists in HDFS:
 ```console
 MASTER_NODE=${LEGACY_CLUSTER_NAME}-m
-gcloud compute ssh ${MASTER_NODE} --project=${GOOGLE_CLOUD_PROJECT} --zone=${GCP_ZONE} --tunnel-through-iap 
-hdfs dfs -ls -R /data/
+gcloud compute ssh ${MASTER_NODE} --project=${GOOGLE_CLOUD_PROJECT} --zone=${ZONE} --tunnel-through-iap  \
+    --command="hdfs dfs -ls -R /data/"
 ```
+
 You should see:
 ```
 /data/customers/_SUCCESS
@@ -76,16 +77,18 @@ You should see:
 /data/transactions/_SUCCESS
 /data/transactions/part-xxxxx.snappy.parquet
 ```
-The tables `customers` and `transactions` should also be visible under schema `datalake_demo`, if you run hive and then ;.
+
+The tables `customers` and `transactions` should also be visible under schema `datalake_demo` in Hive:.
 ```console
-gcloud compute ssh ${MASTER_NODE} --project=${GOOGLE_CLOUD_PROJECT} --zone=${GCP_ZONE} --tunnel-through-iap \
-    --command="beeline -u \"jdbc:hive2://localhost:10000/datalake_demo\" -n analyst_eu -e 'SHOW TABLES;'"
+gcloud compute ssh ${MASTER_NODE} --project=${GOOGLE_CLOUD_PROJECT} --zone=${ZONE} --tunnel-through-iap \
+    --command="beeline -u \"jdbc:hive2://localhost:10000/datalake_demo\" -n root -e 'SHOW TABLES;'"
 ```
 
 * Next, lets create Users & permissions in legacy cluster.
 ```console
-cd src/scripts/00-legacy-hadoop
-source setup_user_policies.sh ${GOOGLE_CLOUD_PROJECT} ${ZONE} ${MASTER_NODE}
+RANGER_PWD=$(terraform output -raw ranger_pwd_clear)
+cd ../scripts/00-legacy-hadoop
+source setup_users_policies.sh ${GOOGLE_CLOUD_PROJECT} ${ZONE} ${MASTER_NODE} ${RANGER_PWD}
 ```
 After successful execution:
 * 2 users and groups are created: analyst_us, analyst_eu
@@ -95,7 +98,7 @@ After successful execution:
   * Masking Policy (Mask PII email in customers table)
 Verify users and policies are in effect using beeline from Master node
 ```console
-gcloud compute ssh ${MASTER_NODE} --project=${GOOGLE_CLOUD_PROJECT} --zone=${GCP_ZONE} --tunnel-through-iap \
+gcloud compute ssh ${MASTER_NODE} --project=${GOOGLE_CLOUD_PROJECT} --zone=${ZONE} --tunnel-through-iap \
     --command="beeline -u \"jdbc:hive2://localhost:10000/datalake_demo\" -n analyst_eu -e 'SELECT region, count(*) FROM transactions GROUP BY region;'"
 ```
 You should see only data for EU:
@@ -103,8 +106,12 @@ You should see only data for EU:
 +---------+---------+
 | region  |   _c1   |
 +---------+---------+
-| EU      | 167349  |
+| EU      | 166747  |
 +---------+---------+
+```
+If you see a permissions error, run this command from the master node and try again:
+```
+sudo hdfs dfs -chmod  a+w /hadoop/tmp/hive/user-install-dir
 ```
 
 ## Step by step demo

@@ -6,7 +6,7 @@ import sys
 RANGER_HOST = "localhost"
 RANGER_PORT = "6080"
 ADMIN_USER = "admin"
-ADMIN_PASS = "YOUR_ADMIN_PASSWORD_HERE" # <--- UPDATE THIS
+ADMIN_PASS = sys.argv[1]
 SERVICE_NAME = "hive-dataproc"  # Default Hive service name in Dataproc Ranger
 
 BASE_URL = f"http://{RANGER_HOST}:{RANGER_PORT}/service"
@@ -45,7 +45,7 @@ def main():
         "name": "Analyst Base Access",
         "service": SERVICE_NAME,
         "resources": {
-            "database": {"values": ["default"], "isRecursive": False, "isExcludes": False},
+            "database": {"values": ["datalake_demo"], "isRecursive": False, "isExcludes": False},
             "table": {"values": ["transactions", "customers"], "isRecursive": False, "isExcludes": False},
             "column": {"values": ["*"], "isRecursive": False, "isExcludes": False}
         },
@@ -66,7 +66,7 @@ def main():
       "resources": {
         "database": {
           "values": [
-            "default"
+            "datalake_demo"
           ],
           "isExcludes": False,
           "isRecursive": False
@@ -123,7 +123,7 @@ def main():
         },
         "database": {
           "values": [
-            "default"
+            "datalake_demo"
           ],
           "isExcludes": False,
           "isRecursive": False

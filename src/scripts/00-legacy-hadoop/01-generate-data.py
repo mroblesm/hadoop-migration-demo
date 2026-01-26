@@ -4,10 +4,16 @@ import random
 import time
 from datetime import datetime, timedelta
 
+data_path = "hdfs:///data"
+db_name = "datalake_demo"
+
 def generate_data():
     # Initialize Spark Session
+    print("Creating Spark Session...")
+
     spark = SparkSession.builder \
         .appName("DataGenerator") \
+        .config("spark.sql.catalogImplementation", "hive") \
         .enableHiveSupport() \
         .getOrCreate()
 
@@ -19,21 +25,22 @@ def generate_data():
     
     # --- 1. Generate Customers Data ---
     print(f"Generating {NUM_CUSTOMERS} customers...")
-    customers_data = []
-    for i in range(NUM_CUSTOMERS):
+
+    def create_customer(i):
         cid = f"CUST_{i:05d}"
-        customers_data.append(Row(
+        return Row(
             customer_id=cid,
             name=f"Customer_{i}",
             email=f"user_{i}@example.com", # PII field
             segment=random.choice(SEGMENTS)
-        ))
-    
-    df_customers = spark.createDataFrame(customers_data)
-    
+        )
+
+    customers_rdd = spark.sparkContext.parallelize(range(NUM_CUSTOMERS)).map(create_customer)
+    df_customers = spark.createDataFrame(customers_rdd)
+
     # Write to HDFS
-    customers_path = "hdfs:///data/customers"
-    df_customers.write.mode("overwrite").parquet(customers_path)
+    customers_path = f"{data_path}/customers"
+    df_customers.repartition(4).write.mode("overwrite").parquet(customers_path)
     print(f"Customers data written to {customers_path}")
 
     # --- 2. Generate Transactions Data ---
@@ -57,16 +64,20 @@ def generate_data():
     df_transactions = spark.createDataFrame(txn_rdd)
 
     # Write to HDFS
-    transactions_path = "hdfs:///data/transactions"
-    df_transactions.write.mode("overwrite").parquet(transactions_path)
+    print("Writing results to HDFS...")
+    transactions_path = f"{data_path}/transactions"
+    df_transactions.repartition(16).write.mode("overwrite").parquet(transactions_path)
     print(f"Transactions data written to {transactions_path}")
 
     # --- 3. Register in Hive (Optional but recommended for Legacy Demo) ---
     print("Registering tables in Hive...")
-    spark.sql("CREATE SCHEMA IF NOT EXISTS datalake_demo;")
-    spark.sql(f"CREATE EXTERNAL TABLE IF NOT EXISTS datalake_demo.customers (customer_id STRING, name STRING, email STRING, segment STRING) STORED AS PARQUET LOCATION '{customers_path}'")
-    spark.sql(f"CREATE EXTERNAL TABLE IF NOT EXISTS datalake_demo.transactions (transaction_id STRING, customer_id STRING, amount DOUBLE, region STRING, timestamp STRING) STORED AS PARQUET LOCATION '{transactions_path}'")
-    
+    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {db_name} LOCATION '/user/hive/warehouse/{db_name}.db'")
+    spark.sql(f"CREATE EXTERNAL TABLE IF NOT EXISTS {db_name}.customers (customer_id STRING, name STRING, email STRING, segment STRING) STORED AS PARQUET LOCATION '{customers_path}'")
+    spark.sql(f"CREATE EXTERNAL TABLE IF NOT EXISTS {db_name}.transactions (transaction_id STRING, customer_id STRING, amount DOUBLE, region STRING, timestamp STRING) STORED AS PARQUET LOCATION '{transactions_path}'")
+    print("Hive external table creation Complete.")
+    print(f"Running query 'SELECT * FROM {db_name}.customers LIMIT 50' ...")
+    spark.sql(f"SELECT * FROM {db_name}.customers LIMIT 50").show()
+
     print("Data Generation Complete.")
     spark.stop()
 
