@@ -10,8 +10,8 @@ Once target users and groups are created, [BQMS Hadoop permissions migration too
 
 Below indicates the source and target components during the migration:
 * Ranger Resource (Hive Table) → BigQuery Table.
-* Ranger Allow Policy →  IAM Role (roles/bigquery.dataViewer).
-* Ranger Row Filter →  BigQuery Row Access Policy.
+* Ranger Allow Policy → IAM Role (roles/bigquery.dataViewer).
+* Ranger Row Filter → BigQuery Row Access Policy.
 * Ranger Masking → BigQuery Policy Tags.
 
 The required steps to execute the migration are as follow. Details found in next sections, for any clarification refer to public documentation.
@@ -23,17 +23,17 @@ The required steps to execute the migration are as follow. Details found in next
 6. Apply permissions to BQ / GCS Folders
 
 
-**1. Extract metadata**
+**1. Extract metadata for Hive, HDFS and Ranger**
 
-First step is to extract existing metadata using `dwh-dumper-tool` (part of BQMS). This tool needs to be installed and executed in a node in source Hadoop platform with access to Ranger.
+First step is to extract existing metadata using `dwh-dumper-tool` (part of BQMS). This tool needs to be installed and executed in a node in source Hadoop platform with access to the services.
 
-We will reproduce this in the legacy hadoop cluster created in Step 0, SSH-ing in the master node.
+We will reproduce this in the legacy hadoop cluster created at the beginning, SSH-ing in the master node.
 ```console
-LEGACY_CLUSTER_NAME=$(terraform output legacy_hadoop_cluster)
+LEGACY_CLUSTER_NAME=$(terraform output -raw legacy_hadoop_cluster)
 MASTER_NODE=${LEGACY_CLUSTER_NAME}-m
-RANGER_PWD=$(terraform output ranger_pwd_clear)
-CODE_BUCKET=$(terraform output code_bucket)
-gcloud compute ssh ${MASTER_NODE} --project=${GOOGLE_CLOUD_PROJECT} --zone=${GCP_ZONE} --tunnel-through-iap 
+RANGER_PWD=$(terraform output -raw ranger_pwd_clear)
+CODE_BUCKET=$(terraform output -raw code_bucket)
+gcloud compute ssh ${MASTER_NODE} --project=${GOOGLE_CLOUD_PROJECT} --zone=${ZONE} --tunnel-through-iap 
 ```
 Once in the master node, download and execute the tool (recommend to check dwh tool Github repo for the latest version):
 ```
@@ -49,45 +49,87 @@ cd dwh-migration-tools-v1.7.0/dumper/bin
   --ranger-scheme http \
   --output gs://${CODE_BUCKET}/ranger-dumper-output.zip \
   --assessment
+sudo ./dwh-migration-dumper --connector hdfs \
+  --host ${MASTER_NODE} \
+  --port 8020 \
+  --output gs://${CODE_BUCKET}/hdfs-dumper-output.zip \
+  --assessment
+./dwh-migration-dumper \
+  --connector hiveql \
+  --database datalake_demo \
+  --host ${MASTER_NODE} \
+  --port 9083 \
+  --output gs://${CODE_BUCKET}/translation_output/hive-dumper-output.zip \
+  --assessment
 ```
-Check the execution output to verify it has executed successfully. It will generate a file GCS `ranger-dumper-output.zip`. This file contains Ranger policies to migrate.
+Check the execution outputs of the three dumper commands to verify their successful execution. They will generate the results in GCS files (`ranger-dumper-output.zip`, `hdfs-dumper-output.zip`, `hive-dumper-output.zip`). These files contain Hive, HDFS and Ranger assets to migrate (database, tables, user, groups, policies).
 
 **2. Create Principals mapping ruleset configuration file**
 
 Next step is to create a principals mapping file.
 First, a ruleset configuration file is required, containing mapping rules that will instruct BQMS how to map each of your sources Hadoop principals (users, groups, functional accounts) to Cloud IAM user, groups and service accounts.
-We will use an example file, replacing required values with the Google identities you created / selected previuosly. Edit the file before proceeding.
+We will use an example file. **You need to replace required values with the Google identities you created / selected previuosly**: edit the file before proceeding. Once updated, run the following command from cloud shell:
 ```
 gsutil cp src/scripts/05-permissions-migration/principals-ruleset.yaml gs://${CODE_BUCKET}
 ```
 
 **3. Generate Principals mapping file ‘principals.yaml’**
 
-With the ruleset configuration file, invoke dwh tool to generate principals mapping file.
+With the ruleset configuration file, invoke dwh tool to generate principals mapping file. SSH back to the master node to run this command:
 ```console
+gcloud compute ssh ${MASTER_NODE} --project=${GOOGLE_CLOUD_PROJECT} --zone=${ZONE} --tunnel-through-iap
+cd dwh-migration-tools-v1.7.0/permissions-migration/bin
 ./dwh-permissions-migration expand \
     --principal-ruleset gs://${CODE_BUCKET}/principals-ruleset.yaml \
+    --hdfs-dumper-output gs://${CODE_BUCKET}/hdfs-dumper-output.zip \
     --ranger-dumper-output gs://${CODE_BUCKET}/ranger-dumper-output.zip \
     --output-principals gs://${CODE_BUCKET}/principals.yaml
 ```
 Check the execution output to verify it has executed successfully. It will generate a file GCS `principals.yaml`. This file contains the exact mapping of principals.
 
-**4. Create permissions configuration file**
+**4. Create configuration files**
 
-Next step is to create the target permissions file.
+Next step is to create the target configuration files.
 First, a permissions configuration file is required. This file defines customisation of how permissions from Ranger map to BigQuery (i.e. to use a custom IAM role for certain tables).
-We will use an example file that does not contain any customisation.
+We will use an example file that does not contain any customisation. Run the following command from cloud shell:
 ```
 gsutil cp src/scripts/05-permissions-migration/permissions-config.yaml gs://${CODE_BUCKET}
 ```
+Secondly, database and tables configuration file are required for translation. These files define how databases and tables are mapped to target destinations, and are used to create a  tables mapping YAML for HiveToBigQuery service in BQMS.
+**You need to replace required values before copying these files to GCS**
+```
+gcloud storage cp src/scripts/05-permissions-migration/database.config.yaml gs://${CODE_BUCKET}/translation/
+gcloud storage cp src/scripts/05-permissions-migration/tables.config.yaml gs://${CODE_BUCKET}/translation/
+AUTH_TOKEN=$(gcloud auth print-access-token)
+curl -d '{
+  "tasks": {
+      "string": {
+        "type": "HiveQL2BigQuery_Translation",
+        "translation_details": {
+            "target_base_uri": "gs://'"${CODE_BUCKET}"'/translation_output",
+            "source_target_mapping": {
+              "source_spec": {
+                  "base_uri": "gs://'"${CODE_BUCKET}"'/translation"
+              }
+            },
+            "target_types": ["metadata"]
+        }
+      }
+  }
+  }' \
+  -H "Content-Type:application/json" \
+  -H "Authorization: Bearer $AUTH_TOKEN" -X POST https://bigquerymigration.googleapis.com/v2alpha/projects/${GOOGLE_CLOUD_PROJECT}/locations/${BQ_REGION}/workflows
+```
+When completed, a mapping file is generated for each table in database within a predefined path in `gs://${CODE_BUCKET}`.
 
 **5. Generate Permissions mapping file ‘permissions.yaml’**
 
-With the permissions configuration file, invoke dwh tool to generate the target permissions file.
+With the permissions configuration file, invoke dwh tool to generate the target permissions file. SSH back to the master node to run this command:
 ```console
+gcloud compute ssh ${MASTER_NODE} --project=${GOOGLE_CLOUD_PROJECT} --zone=${ZONE} --tunnel-through-iap
 ./dwh-permissions-migration build \
     --permissions-ruleset gs://${CODE_BUCKET}/permissions-config.yaml \
-    --tables gs://${CODE_BUCKET}/tables/ \
+    --tables gs://${CODE_BUCKET}/translation_output/ \
     --principals gs://${CODE_BUCKET}/principals.yaml \
     --ranger-dumper-output gs://${CODE_BUCKET}/ranger-dumper-output.zip \
     --output-permissions gs://${CODE_BUCKET}/permissions.yaml
@@ -111,12 +153,12 @@ If you encounter any issue with BQMS, alternatively the following steps create t
 ```sql
 -- Grant access to `transactions` table to single user in EU Analysts
 GRANT `roles/bigquery.dataViewer`
-ON TABLE `ecomm_demo.transactions`
+ON TABLE `datalake_demo.transactions`
 TO 'user:analyst_eu@your-org.com';
 
 -- Grant access to `customers` table to US Analysts group
 GRANT `roles/bigquery.dataViewer`
-ON TABLE `ecomm_demo.customers`
+ON TABLE `datalake_demo.customers`
 TO 'group:data-analysts-us@your-org.com';
 ```
 
@@ -125,12 +167,12 @@ TO 'group:data-analysts-us@your-org.com';
 ```sql
 -- Apply Row Level Security (Mapped from Ranger Row Filter policy)
 CREATE OR REPLACE ROW ACCESS POLICY `eu_filter_migrated`
-ON `ecomm_demo.transactions`
+ON `datalake_demo.transactions`
 GRANT TO ('user:analyst_eu@your-org.com')
 FILTER USING (region = 'EU');
 ```
 
-* Apply Column Masking (Mapped from Ranger Masking policy) to `ecomm_demo.customers` table, email column
+* Apply Column Masking (Mapped from Ranger Masking policy) to `datalake_demo.customers` table, email column
   * First, create a Policy tag taxonomy (`privacy`) under BigQuery, Governance > Policy tags
   * Then, add Data Policies by creating a new Policy tag in the taxonomy (`pii_tag`) with a 'Email Mask' rule associated to Principal `data-analysts-us@your-org.com`.
   * Finally, navigate to BigQuery studio, select the `customers` table, Edit schema, select `email` column and click on `Add policy tag` on the top. Select the taxonomy `privacy` with the policy tag `pii_tag` to apply to the column.

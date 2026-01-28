@@ -6,11 +6,12 @@ spark = SparkSession.builder.appName("ServerlessRevenueReport").getOrCreate()
 
 # Arguments
 data_location_path = sys.argv[1]
+print(f"Using data location path: '{data_location_path}'")
 
 # Read from GCS (or BigLake tables via BigQuery connector)
 # Using direct GCS for speed in this demo
-df_trans = spark.read.parquet(f"{data_location_path}/transactions/data")
-df_cust = spark.read.parquet(f"{data_location_path}/customers/data")
+df_trans = spark.read.parquet(f"{data_location_path}/data/transactions")
+df_cust = spark.read.parquet(f"{data_location_path}/data/customers")
 
 # Transformation
 result = df_trans.join(df_cust, "customer_id") \
@@ -24,10 +25,11 @@ result = df_trans.join(df_cust, "customer_id") \
 # -- NEW CODE -- Write to BigQuery Native Table (Modern Target)
 result.write \
   .format("bigquery") \
-  .option("table", f"ecomm_demo.revenue_report") \
-  .option("temporaryGcsdata_location_path", f"{data_location_path}/temp") \
+  .option("table", f"datalake_demo.revenue_report") \
+  .option("writeMethod", "direct") \
+  .option("writeAtLeastOnce", "true") \
   .mode("overwrite") \
   .save()
-print("New data written to 'ecomm_demo.revenue_report' BQ table")
+print("New data written to 'datalake_demo.revenue_report' BQ table")
 
 spark.stop()

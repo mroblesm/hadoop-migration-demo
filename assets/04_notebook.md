@@ -9,9 +9,9 @@ All the instructions are provided in the notebook under `04-notebooks/explore_da
 To upload this notebook:
 * Navigate to BigQuery Studio, Notebooks
 * Click on the 3 dots next to "Notebooks" to expand contextual menu, and select "Upload to Notebooks"
-* Select URL option and use URL to notebook in Github repository. Alternatively you can clone the repo in your local environment and make any modifications.
-* Connect the notebook to a Runtime
-* Fill in the notebook arguments in the first cell with the values from previous executions
-* Execute all the cells and check the results.
+* Select URL option and use URL of the [notebook](../src/scripts/04-notebooks/explore_data.ipynb) in this Github repository. Alternatively you can clone the repo in your local environment and make any modifications.
 
 Once uploaded, follow the step-by-step-instructions in the notebook.
+* Connect the notebook to a Runtime. The first time, a default runtime is created; select the existing vpc network and subnet previously created.
+* Fill in the notebook arguments in the first cell with the values from previous executions (project and location)
+* Execute all the cells and check the results.

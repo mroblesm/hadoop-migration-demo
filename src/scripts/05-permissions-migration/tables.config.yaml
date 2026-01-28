@@ -1,0 +1,6 @@
+type: object_rewriter
+relation:
+- match:
+    relationRegex: ".*"
+  external:
+    location_expression: "'gs://<DATA_BUCKET>/data/' + table.name"

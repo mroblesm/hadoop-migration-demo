@@ -16,8 +16,9 @@ GCP_REGION=$2
 BUCKET=$3
 
 gcloud dataproc batches submit pyspark etl_serverless.py \
-    --region=us-central1 \
+    --region=${GCP_REGION} \
     --version=2.3 \
     --deps-bucket=gs://${BUCKET} \
-    --subnet=projects/${GCP_PROJECT}/regions/${$GCP_REGION}/subnetworks/dataproc-serverless-subnet \
-    -- $BUCKET
+    --service-account=dataproc-sa@${GCP_PROJECT}.iam.gserviceaccount.com\
+    --subnet=projects/${GCP_PROJECT}/regions/${GCP_REGION}/subnetworks/spark-subnet \
+    -- "gs://$BUCKET"

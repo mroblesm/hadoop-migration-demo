@@ -126,6 +126,12 @@ resource "google_project_service" "service-cloudkms" {
   service = "cloudkms.googleapis.com"
 }
 
+# Enable the BigQuery Unified API
+resource "google_project_service" "bigquery_unified" {
+  project = var.project_id
+  service = "bigqueryunified.googleapis.com"
+}
+
 resource "time_sleep" "google_api_activation_time_delay" {
   create_duration = "30s"
   depends_on = [
@@ -141,6 +147,7 @@ resource "time_sleep" "google_api_activation_time_delay" {
     google_project_service.service-servicenetworking,
     google_project_service.service-storagetransfer,
     google_project_service.service-cloudkms,
+    google_project_service.bigquery_unified,
     google_project_service.enable_compute_google_apis,
     google_project_service.enable_container_google_apis,
     google_project_service.enable_dataplex_api
@@ -423,7 +430,7 @@ resource "google_storage_bucket_object" "default" {
  *****************************************/
 
 resource "google_service_account" "dataproc_service_account" {
-  account_id   = local.project_id
+  account_id   = "dataproc-sa"
   display_name = "Dataproc Service Account"
   depends_on = [
     time_sleep.sleep_after_org_policy_updates
@@ -581,7 +588,8 @@ resource "google_dataproc_cluster" "legacy_cluster" {
   }
   depends_on = [
     google_storage_bucket_object.ciphertext_upload,
-    google_kms_crypto_key.cryptokey
+    google_kms_crypto_key.cryptokey,
+    google_project_iam_member.dataproc_service_account_roles
   ]
 }
 

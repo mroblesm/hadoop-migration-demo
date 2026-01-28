@@ -1,30 +1,28 @@
 ranger:
   user_rules:
-    - when: "user.name == 'analyst_us'"
+    - when: "user.name.startsWith('analyst_')"
       map:
         type:
           value: user
         email_address:
-          expression: "analyst_us@your-org.com"
-    - when: "user.name == 'analyst_eu'"
-      map:
-        type:
-          value: user
-        email_address:
-          expression: "analyst_eu@your-org.com"
+          expression: "user.name + '@<YOUR_ORG_DOMAIN>'"
+    - skip: true
+
   group_rules:
     - when: "group.name == 'analyst_us'"
       map:
         type:
           value: group
         email_address:
-          expression: "data_analysts_us@your-org.com"
+          expression: "'data_analysts_us@<YOUR_ORG_DOMAIN>'"
     - when: "group.name == 'analyst_eu'"
       map:
         type:
           value: group
         email_address:
-          expression: "data_analysts_eu@your-org.com"
+          expression: "'data_analysts_eu@<YOUR_ORG_DOMAIN>'"
+    - skip: true
+
   role_rules:
     - skip: true
 

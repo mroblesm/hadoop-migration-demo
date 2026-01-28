@@ -59,7 +59,7 @@ gcloud dataplex datascans create data-discovery $SCAN_ID \
     --bigquery-publishing-dataset-location="${BQ_REGION}" \
     --bigquery-publishing-dataset-project="projects/${GOOGLE_CLOUD_PROJECT}" \
     --bigquery-publishing-table-type="BIGLAKE" \
-    --storage-include-patterns="**/*.parquet" \
+    --storage-include-patterns="data/customers/*.parquet,data/transactions/*.parquet" \
     --on-demand="ON_DEMAND"
 gcloud dataplex datascans run $SCAN_ID \
   --location=$REGION

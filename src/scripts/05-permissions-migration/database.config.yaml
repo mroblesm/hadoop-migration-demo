@@ -1,0 +1,7 @@
+type: experimental_object_rewriter
+relation:
+  - match:
+      schema: datalake_demo
+    outputName:
+      database: <PROJECT_ID>
+      schema: datalake_demo
